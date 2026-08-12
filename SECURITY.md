@@ -51,6 +51,28 @@ Read these before reporting:
   secret, and no real deployment may use it — a real organizer key is generated on the
   server by `deploy/stiq-up.sh` and never leaves it.
 
+## Automated scanning
+
+Every pull request, every push to `main`, and once a week, the repository is scanned for
+hardcoded credentials and common code weaknesses by
+[`.github/workflows/security-scan.yml`](.github/workflows/security-scan.yml).
+
+It is **not** a gate. It reports and never fails, at any severity, so a false positive
+cannot block a PR. Results appear in the Security tab; pull requests get the counts in the
+job summary. It is a net, not a proof: it did not flag `issuer/organizer_nostr.json`, which
+the section above documents as a deliberately burnt key, so treat a clean run as one
+check passing rather than as the repository being clear.
+
+A finding that is wrong can be marked where it is, naming the rule so the suppression
+stays narrow:
+
+```js
+const pem = '-----BEGIN PRIVATE KEY-----' // threatcrush-disable-line secret-private-key
+```
+
+`threatcrush-disable-next-line` and a `.threatcrushignore` of globs at the repository root
+work too. Prefer the line comment: it says which rule, and it survives the file moving.
+
 ## Operators
 
 If you run a STIQ community, the security of your members depends on your deployment, not
