@@ -111,11 +111,16 @@ jobs:
         working-directory: client/ios
         run: |
           set -o pipefail
+          # -derivedDataPath is what puts the product under ./build, where the assertion below
+          # goes looking for it. Without it xcodebuild writes to ~/Library/Developer/Xcode/
+          # DerivedData, `find build` matches nothing, and the assertion inspects an empty path
+          # and reports "tor not linked" — which reads like the drift it is meant to catch.
           xcodebuild \
             -workspace stiq.xcworkspace \
             -scheme stiq \
             -configuration Debug \
             -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             build
       - name: Assert Tor + single-OpenSSL link (the drift that hid for months)
@@ -125,6 +130,14 @@ jobs:
           APP="$(find build -name 'stiq.debug.dylib' | head -1)"
           BIN="${APP:-$DYL}"
           echo "inspecting: $BIN"
+          # Say which of the two it is. An empty BIN sends every check below into a file that is
+          # not there, and `strings` on nothing reports "tor not linked" — the drift this step
+          # exists to catch — when the truth is that it never found a binary to look at.
+          if [ -z "$BIN" ] || [ ! -f "$BIN" ]; then
+            echo "::error::no built binary under client/ios/build — the build moved, this step did not run its checks"
+            find build -maxdepth 4 -name 'Debug-iphoneos' -o -maxdepth 4 -name '*.app' | head -20
+            exit 1
+          fi
           strings "$BIN" | grep -q "tor 0.4.9" || { echo "::error::tor 0.4.9.x not linked"; exit 1; }
           # Exactly one SSL_CTX_new symbol (tor's OpenSSL is static+hidden, op-sqlite's is a dynamic
           # import) — more than one means the two-static-OpenSSL collision reappeared.
