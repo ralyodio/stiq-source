@@ -87,7 +87,12 @@ jobs:
   # xcodebuild is.
   ios-build:
     name: iOS (pod install + device build)
-    runs-on: macos-15
+    # macos-15 is Xcode 16.4, whose newest SDK is iOS 18.5. react-native-camera-kit 18 reads
+    # photoOutput.isDeferredStartSupported, which iOS 26 introduced: the pod guards the call with
+    # `#available(iOS 26.0, *)`, but availability is a runtime question and the symbol still has to
+    # exist to compile, so the build dies with "value of type 'AVCapturePhotoOutput' has no member".
+    # The dependency wants the newer SDK; the runner is what has to move.
+    runs-on: macos-26
     defaults:
       run:
         working-directory: client
