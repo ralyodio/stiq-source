@@ -1,6 +1,7 @@
 jest.mock('../../config', () => ({...jest.requireActual('../../config'), TIMING_JITTER: false}));
 
 import 'react-native';
+import {Animated} from 'react-native';
 import React from 'react';
 import renderer, {act} from 'react-test-renderer';
 import {MainScreen, type MainScreenProps} from './MainScreen';
@@ -89,6 +90,33 @@ const baseProps: Partial<MainScreenProps> = {
 /** Flush a pending InteractionManager.runAfterInteractions task (same idiom as
  *  MainScreen.spaceEmbed.test.tsx / MainScreen.navOriginStack.test.tsx for the threadNodes effect —
  *  notifLiveRecompute defers through the identical API). */
+/**
+ * The recompute under test runs through InteractionManager.runAfterInteractions, and that queue
+ * does not drain while an interaction handle is open. Animated holds one for the length of every
+ * animation it runs (isInteraction defaults true), so for as long as MainScreen has an animation
+ * in flight the callback does not fire — not late, not at all. Waiting cannot fix that: the run
+ * that sent me here sat through 25 hops of both queues and still saw zero calls, on a CI box busy
+ * enough to leave an animation unfinished where this machine finishes it.
+ *
+ * Finishing them instantly is the same answer MainScreen.feedHold.test.tsx already reached, and it
+ * costs this file nothing: what is being asserted is when the notification center re-derives, not
+ * how anything animates.
+ */
+const instantAnimation = (): Animated.CompositeAnimation => ({
+  start: (cb?: (result: {finished: boolean}) => void) => cb?.({finished: true}),
+  stop: () => undefined,
+  reset: () => undefined,
+});
+
+beforeEach(() => {
+  jest.spyOn(Animated, 'timing').mockImplementation(instantAnimation);
+  jest.spyOn(Animated, 'spring').mockImplementation(instantAnimation);
+});
+
+afterEach(() => {
+  jest.restoreAllMocks();
+});
+
 async function flush(): Promise<void> {
   await act(async () => {
     await new Promise<void>(resolve => setImmediate(resolve));
