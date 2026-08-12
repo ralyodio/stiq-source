@@ -92,7 +92,23 @@ const baseProps: Partial<MainScreenProps> = {
 async function flush(): Promise<void> {
   await act(async () => {
     await new Promise<void>(resolve => setImmediate(resolve));
+    // And one timer hop. The recompute is queued on setImmediate, but the renders it causes drag
+    // RN internals that queue on setTimeout(0) behind them, and node reaches its timer phase and
+    // its check phase in an order that depends on how busy the process is. Alone this file had
+    // both hops to itself; sharing a worker with the rest of the suite it did not, which is the
+    // whole of why these waits held here and failed in CI.
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
   });
+}
+
+/** Hop until the deferred work has actually landed instead of assuming one hop did it. Bounded,
+ *  so a real regression still fails the test rather than hanging it — and every assertion below
+ *  still states its exact expectation, so waiting longer can never turn a wrong answer right. */
+async function flushUntil(landed: () => boolean, hops = 25): Promise<void> {
+  for (let i = 0; i < hops; i++) {
+    if (landed()) return;
+    await flush();
+  }
 }
 
 /** Post-unmount teardown flush. A handful of pre-existing, unrelated MainScreen effects (e.g.
@@ -152,7 +168,9 @@ it('notification center recomputes live while open, stays gated while closed, an
       />,
     );
   });
-  await flush();
+  // Nothing is expected to land here, so there is no condition to wait on — flush hard instead,
+  // which makes the "it never derived" claim stronger rather than weaker.
+  await flushHard();
   expect(onGetNotifications).not.toHaveBeenCalled();
 
   // --- Open: derives exactly once on the open transition -----------------------------------
@@ -160,7 +178,7 @@ it('notification center recomputes live while open, stays gated while closed, an
   act(() => {
     (bell.props.onPress as () => void)();
   });
-  await flush();
+  await flushUntil(() => onGetNotifications.mock.calls.length >= 1);
   expect(onGetNotifications).toHaveBeenCalledTimes(1);
   expect(itemsOf(tree).map(i => i.id)).toEqual(['a']);
 
@@ -181,7 +199,7 @@ it('notification center recomputes live while open, stays gated while closed, an
       />,
     );
   });
-  await flush();
+  await flushUntil(() => onGetNotifications.mock.calls.length > 1);
   expect(itemsOf(tree).map(i => i.id).sort()).toEqual(['a', 'b']);
   const callsAfterGroupsBump = onGetNotifications.mock.calls.length;
   expect(callsAfterGroupsBump).toBeGreaterThan(1);
@@ -212,7 +230,7 @@ it('notification center recomputes live while open, stays gated while closed, an
       />,
     );
   });
-  await flush();
+  await flushUntil(() => onGetNotifications.mock.calls.length > callsAfterGroupsBump);
   expect(itemsOf(tree).map(i => i.id).sort()).toEqual(['a', 'b', 'dm1']);
   const callsAfterInboxChange = onGetNotifications.mock.calls.length;
   expect(callsAfterInboxChange).toBeGreaterThan(callsAfterGroupsBump);
@@ -235,7 +253,10 @@ it('notification center recomputes live while open, stays gated while closed, an
       />,
     );
   });
-  await flush();
+  // Again nothing should land, so flush hard rather than waiting on a condition that must not
+  // come true: giving a stray recompute every chance to appear is what makes this assertion mean
+  // something.
+  await flushHard();
   expect(onGetNotifications.mock.calls.length).toBe(callsAfterInboxChange);
   expect(itemsOf(tree).map(i => i.id).sort()).toEqual(['a', 'b', 'dm1']);
 

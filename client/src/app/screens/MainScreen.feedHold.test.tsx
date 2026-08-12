@@ -68,7 +68,17 @@ beforeEach(() => {
   jest.spyOn(Animated, 'spring').mockImplementation(instantAnimation);
 });
 afterEach(async () => {
-  await act(async () => { await new Promise<void>(resolve => setImmediate(resolve)); });
+  // Settle before restoring, and give it more than one hop to do it in. Animated.timing and
+  // Animated.spring are mocked for this file; restoring them while a straggler is still in flight
+  // hands the real implementations a half-finished interaction, and the throw lands in whichever
+  // file jest runs next in this worker rather than in this one. Both hops, because the work being
+  // waited on queues on setImmediate and the renders behind it queue on setTimeout(0).
+  for (let i = 0; i < 5; i++) {
+    await act(async () => {
+      await new Promise<void>(resolve => setImmediate(resolve));
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+    });
+  }
   jest.restoreAllMocks();
 });
 
