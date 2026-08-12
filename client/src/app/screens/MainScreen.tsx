@@ -1934,7 +1934,10 @@ export function MainScreen({
       };
     }
     return false;
-  }, []);
+    // Everything else this reads comes off a ref, which is what keeps the callback stable; the
+    // fingerprint is the one real closure, and it is a useCallback on [] so naming it here costs
+    // that stability nothing.
+  }, [embedNavFingerprint]);
 
   /**
    * Route a `stiq://channel/<id>` invite link (deep link OR an in-body tapped card) into either a
