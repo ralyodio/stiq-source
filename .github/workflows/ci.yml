@@ -126,8 +126,15 @@ jobs:
       - name: Assert Tor + single-OpenSSL link (the drift that hid for months)
         working-directory: client/ios
         run: |
-          DYL="$(find build -name 'stiq.debug.dylib' -o -name 'stiq' -path '*Debug-iphoneos*' | head -1)"
-          APP="$(find build -name 'stiq.debug.dylib' | head -1)"
+          # Skip the dSYM. It contains a file of exactly the name being looked for, and finds it
+          # first: build/.../stiq.app.dSYM/Contents/Resources/DWARF/stiq.debug.dylib. That is the
+          # debug-symbol companion — DWARF, no __cstring — so `strings` finds no tor version in it
+          # and the step reports the app is not linked against Tor while never having looked at
+          # the app. The dylib inside the .app is the one carrying the code: with Xcode's debug
+          # dylib, stiq.app/stiq is a launcher stub and stiq.app/stiq.debug.dylib is the binary,
+          # which is why that name is preferred over the executable here.
+          DYL="$(find build -path '*Debug-iphoneos*' -name 'stiq' -type f -not -path '*.dSYM/*' | head -1)"
+          APP="$(find build -name 'stiq.debug.dylib' -not -path '*.dSYM/*' | head -1)"
           BIN="${APP:-$DYL}"
           echo "inspecting: $BIN"
           # Say which of the two it is. An empty BIN sends every check below into a file that is
